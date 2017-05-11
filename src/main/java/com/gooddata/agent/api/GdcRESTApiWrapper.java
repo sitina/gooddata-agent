@@ -46,6 +46,35 @@
 
 package com.gooddata.agent.api;
 
+import com.gooddata.FutureResult;
+import com.gooddata.GoodData;
+import com.gooddata.GoodDataException;
+import com.gooddata.agent.api.model.Column;
+import com.gooddata.agent.api.model.MetadataObject;
+import com.gooddata.agent.api.model.Project;
+import com.gooddata.agent.api.model.SLI;
+import com.gooddata.agent.util.Constants;
+import com.gooddata.agent.util.NetUtil;
+import com.gooddata.dataload.processes.DataloadProcess;
+import com.gooddata.dataload.processes.ProcessExecution;
+import com.gooddata.dataload.processes.ProcessExecutionDetail;
+import com.gooddata.dataload.processes.ProcessService;
+import net.sf.json.JSON;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpException;
+import org.apache.commons.httpclient.HttpMethod;
+import org.apache.commons.httpclient.HttpStatus;
+import org.apache.commons.httpclient.cookie.CookiePolicy;
+import org.apache.commons.httpclient.methods.DeleteMethod;
+import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.commons.httpclient.methods.InputStreamRequestEntity;
+import org.apache.commons.httpclient.methods.PostMethod;
+import org.apache.log4j.Logger;
+import org.awaitility.Duration;
+import org.awaitility.core.Function;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -59,30 +88,13 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import net.sf.json.JSON;
-import net.sf.json.JSONArray;
-import net.sf.json.JSONObject;
-
-import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.HttpException;
-import org.apache.commons.httpclient.HttpMethod;
-import org.apache.commons.httpclient.HttpStatus;
-import org.apache.commons.httpclient.cookie.CookiePolicy;
-import org.apache.commons.httpclient.methods.DeleteMethod;
-import org.apache.commons.httpclient.methods.GetMethod;
-import org.apache.commons.httpclient.methods.InputStreamRequestEntity;
-import org.apache.commons.httpclient.methods.PostMethod;
-import org.apache.log4j.Logger;
-
-import com.gooddata.agent.api.model.Column;
-import com.gooddata.agent.api.model.MetadataObject;
-import com.gooddata.agent.api.model.Project;
-import com.gooddata.agent.api.model.SLI;
-import com.gooddata.agent.util.Constants;
-import com.gooddata.agent.util.NetUtil;
+import static org.awaitility.Awaitility.with;
+import static org.awaitility.pollinterval.IterativePollInterval.iterative;
 
 /**
  * The GoodData REST API Java wrapper. Stolen from the CL tool's code.
@@ -144,6 +156,7 @@ public class GdcRESTApiWrapper {
     protected NamePasswordConfiguration config;
     private JSONObject userLogin = null;
     private JSONObject profile;
+    private GoodData gd;
 
     private static HashMap<String, String> ROLES = new HashMap<String, String>();
 
@@ -167,6 +180,7 @@ public class GdcRESTApiWrapper {
         this.config = config;
         client = new HttpClient();
         NetUtil.configureHttpProxy(client);
+        this.gd = new GoodData(config.getGdcHost(), config.getUsername(), config.getPassword(), config.getPort());
     }
 
     /**
@@ -2379,104 +2393,75 @@ public class GdcRESTApiWrapper {
         }
     }
 
-    /**
-     * Executes the MAQL and creates/modifies the project's LDM
-     *
-     * @param projectId the project's ID
-     * @param maql      String with the MAQL statements
-     * @return result {@link GraphExecutionResult}
-     * @throws GdcRestApiException
-     */
     public GraphExecutionResult executeGraph(String processUri, String graph, Map<String,String> params) throws GdcRestApiException {
        return executeGraph(processUri, graph, params, null);
     }
 
+
+    public GraphExecutionResult executeGraph(String processUri, String graph, Map<String,String> params, Map<String,String> hiddenParams) throws GdcRestApiException {
+        return executeGraph(processUri, graph, params, hiddenParams, Duration.TEN_SECONDS, new Duration(15, TimeUnit.HOURS));
+    }
+
     /**
-     * Executes the MAQL and creates/modifies the project's LDM
+     * @see <a href="https://developer.gooddata.com/api#/reference/data-integration/manage-a-data-loading-process/execute-a-process">https://developer.gooddata.com/api#/reference/data-integration/manage-a-data-loading-process/execute-a-process</a>
      *
-     * @param projectId the project's ID
-     * @param maql      String with the MAQL statements
+     * Polls for graph result with iterative poll interval, but maximum delay is two minutes
+     *
+     * @param processUri uri of process which should be executed
+     * @param graph graph path
+     * @param params execution params
+     * @param hiddenParams sensitive execution params
+     * @param initialDelay initial polling delay
+     * @param timeout polling timeout
      * @return result {@link GraphExecutionResult}
      * @throws GdcRestApiException
      */
-    public GraphExecutionResult executeGraph(String processUri, String graph, Map<String,String> params, Map<String,String> hiddenParams) throws GdcRestApiException {
+    public GraphExecutionResult executeGraph(String processUri, String graph, Map<String,String> params, Map<String,String> hiddenParams, Duration initialDelay, Duration timeout) throws GdcRestApiException {
         l.debug("Executing Graph processUri=" + processUri + " graph = " + graph);
         if (hiddenParams == null) {
-           hiddenParams = new HashMap<String, String>();
+            hiddenParams = new HashMap<String, String>();
         }
-        PostMethod execPost = createPostMethod(processUri + "/executions");
-        JSONObject execStructure = getGraphExecStructure(graph, params, hiddenParams);
-        InputStreamRequestEntity request = new InputStreamRequestEntity(new ByteArrayInputStream(
-        		execStructure.toString().getBytes()));
-        execPost.setRequestEntity(request);
         try {
-            String response = executeMethodOk(execPost);
-            JSONObject responseObject = JSONObject.fromObject(response);
-            String detailUri = responseObject.getJSONObject("executionTask").getJSONObject("links").getString("detail");
-            GraphExecutionResult execResult = getGraphExecutionResult(detailUri);
-            if (!GraphExecutionResult.OK.equals(execResult.getStatus())) {
-            	throw new GdcRestApiException("ETL error, see log file at " + execResult.logUrl);
-            }
-            return execResult;
-        } finally {
-        	execPost.releaseConnection();
+            ProcessService processService = gd.getProcessService();
+            DataloadProcess dataloadProcess = processService.getProcessByUri(processUri);
+            final FutureResult<ProcessExecutionDetail> processExecutionDetailFuture = processService
+                    .executeProcess(new ProcessExecution(dataloadProcess, graph, params, hiddenParams));
+            with()
+                    .pollDelay(initialDelay)
+                    .and()
+                    .pollInterval(iterative(new Function<Duration, Duration>() {
+                        public Duration apply(Duration currentPoll) {
+                            Duration nextPoll = currentPoll.plus(Duration.ONE_SECOND);
+                            if (nextPoll.compareTo(Duration.ONE_MINUTE) >= 0) {
+                                nextPoll = Duration.ONE_MINUTE;
+                            }
+                            return nextPoll;
+                        }
+                    }, Duration.FIVE_SECONDS))
+                    .atMost(timeout)
+                    .await()
+                    .until(new Callable<Boolean>() {
+                        public Boolean call() throws Exception {
+                            return processExecutionDetailFuture.isDone(); //instead of not optimal polling in gooddata-java use custom polling
+                        }
+                    });
+            ProcessExecutionDetail processExecutionDetail = processExecutionDetailFuture.get();
+            return new GraphExecutionResult(processExecutionDetail.getStatus(), processExecutionDetail.getLogUri());
+        } catch (GoodDataException e) {
+            l.error("Execution processUri=" + processUri + " graph=" + graph + " status=failed: ", e);
+            throw new GdcRestApiException(e.getMessage());
         }
     }
 
-    /**
-     * Checks if the migration is finished
-     *
-     * @param link the link returned from the start loading
-     * @return the loading status
-     */
-    public GraphExecutionResult getGraphExecutionResult(String link) throws HttpMethodException {
-        l.debug("Getting Graph execution status uri=" + link);
-        HttpMethod ptm = createGetMethod(getServerUrl() + link);
-        int retries = 5;
-        int sleep = 5;
-        try {
-            String response = "";
-            while (true) {
-                boolean done = false;
-                for (int i = 0; i < retries && !done; i++) {
-                   try {
-                      response = executeMethodOk(ptm);
-                      done = true;
-                   } catch (HttpMethodException e) {
-                      if (i == retries - 4) {
-                         throw new GdcRestApiException("Error checking ETL execution status. Please check the status of " + link + " manually.", e);
-                      } else {
-                         try { Thread.sleep(sleep * 1000); } catch (InterruptedException e1) { }
-                      }
-                   }
-                }
-                JSONObject task = JSONObject.fromObject(response);
-                JSONObject state = task.getJSONObject("executionDetail");
-                if (state != null && !state.isNullObject() && !state.isEmpty()) {
-                    String status = state.getString("status");
-                    l.debug("TaskMan status=" + status);
-                    if (!"RUNNING".equals(status) && !"QUEUED".equals(status)) {
-                    	String logUrl = state.getString("logFileName");
-                    	return new GraphExecutionResult(status, logUrl);
-                    }
-                } else {
-                    l.debug("No executionDetail structure in the execution status!");
-                    throw new GdcRestApiException("No execution structure in the execution status!");
-                }
-            }
-        } finally {
-            ptm.releaseConnection();
-        }
-    }
 
-    /**
-     * Executes the MAQL and creates/modifies the project's LDM
-     *
-     * @param projectId the project's ID
-     * @param maql      String with the MAQL statements
-     * @return result String
-     * @throws GdcRestApiException
-     */
+        /**
+         * Executes the MAQL and creates/modifies the project's LDM
+         *
+         * @param projectId the project's ID
+         * @param maql      String with the MAQL statements
+         * @return result String
+         * @throws GdcRestApiException
+         */
     public String executeDML(String projectId, String maql) throws GdcRestApiException {
         l.debug("Executing MAQL DML projectId=" + projectId + " MAQL DML:\n" + maql);
         PostMethod maqlPost = createPostMethod(getProjectMdUrl(projectId) + DML_EXEC_URI);
@@ -2511,16 +2496,6 @@ public class GdcRESTApiWrapper {
         maqlObj.put("maql", maql);
         maqlStructure.put("manage", maqlObj);
         return maqlStructure;
-    }
-
-    private JSONObject getGraphExecStructure(String graph, Map<String, String> params, Map<String, String> hiddenParams) {
-    	JSONObject structure = new JSONObject();
-        JSONObject execution = new JSONObject();
-        execution.put("graph", graph);
-        execution.put("params", getEtlParamsStructure(params));
-        execution.put("hiddenParams", getEtlParamsStructure(hiddenParams));
-        structure.put("execution", execution);
-        return structure;
     }
 
     private JSONObject getEtlParamsStructure(Map<String,String> params) {
