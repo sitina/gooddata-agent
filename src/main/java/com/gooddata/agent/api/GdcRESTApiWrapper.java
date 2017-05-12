@@ -48,7 +48,9 @@ package com.gooddata.agent.api;
 
 import com.gooddata.FutureResult;
 import com.gooddata.GoodData;
+import com.gooddata.GoodDataAgent;
 import com.gooddata.GoodDataException;
+import com.gooddata.agent.Main;
 import com.gooddata.agent.api.model.Column;
 import com.gooddata.agent.api.model.MetadataObject;
 import com.gooddata.agent.api.model.Project;
@@ -71,6 +73,8 @@ import org.apache.commons.httpclient.methods.DeleteMethod;
 import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.httpclient.methods.InputStreamRequestEntity;
 import org.apache.commons.httpclient.methods.PostMethod;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.util.VersionInfo;
 import org.apache.log4j.Logger;
 import org.awaitility.Duration;
 import org.awaitility.core.Function;
@@ -180,7 +184,7 @@ public class GdcRESTApiWrapper {
         this.config = config;
         client = new HttpClient();
         NetUtil.configureHttpProxy(client);
-        this.gd = new GoodData(config.getGdcHost(), config.getUsername(), config.getPassword(), config.getPort());
+        this.gd = new GoodDataAgent(config.getGdcHost(), config.getUsername(), config.getPassword(), config.getPort());
     }
 
     /**
@@ -3272,9 +3276,17 @@ public class GdcRESTApiWrapper {
         request.setRequestHeader("Content-Type", "application/json; charset=utf-8");
         request.setRequestHeader("Accept", "application/json");
         request.setRequestHeader("Accept-Charset", "utf-u");
-        request.setRequestHeader("User-Agent", "GoodData Agent/0.9");
+        request.setRequestHeader("User-Agent", getUserAgent());
         request.getParams().setCookiePolicy(CookiePolicy.BROWSER_COMPATIBILITY);
         return request;
+    }
+
+    public static String getUserAgent() {
+        Package pkg = Main.class.getPackage();
+        String clientVersion = pkg != null && pkg.getImplementationVersion() != null?pkg.getImplementationVersion():"UNKNOWN";
+        VersionInfo vi = VersionInfo.loadVersionInfo("org.apache.http.client", HttpClientBuilder.class.getClassLoader());
+        String apacheVersion = vi != null?vi.getRelease():"UNKNOWN";
+        return String.format("%s/%s (%s; %s) %s/%s", new Object[]{"GoodData Agent", clientVersion, System.getProperty("os.name"), System.getProperty("java.specification.version"), "Apache-HttpClient", apacheVersion});
     }
 
     protected void finalize() throws Throwable {

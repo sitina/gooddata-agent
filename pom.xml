@@ -4,7 +4,7 @@
 	<groupId>com.gooddata.agent</groupId>
 	<artifactId>gdc-agent</artifactId>
 	<packaging>jar</packaging>
-	<version>0.9.1</version>
+	<version>0.9.2</version>
 	<name>GoodData Agent</name>
 	<url>http://maven.apache.org</url>
 	<dependencies>
@@ -69,6 +69,24 @@
 					<descriptorRefs>
 						<descriptorRef>jar-with-dependencies</descriptorRef>
 					</descriptorRefs>
+				</configuration>
+			</plugin>
+			<plugin>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>2.4</version>
+				<configuration>
+					<archive>
+						<manifestEntries>
+							<Name>com/gooddata/agent</Name>
+							<Specification-Title>${project.description}</Specification-Title>
+							<Specification-Version>${project.version}</Specification-Version>
+							<Specification-Vendor>GoodData</Specification-Vendor>
+							<Implementation-Title>${project.description}</Implementation-Title>
+							<Implementation-Version>${project.version}</Implementation-Version>
+							<Implementation-Vendor>GoodData</Implementation-Vendor>
+							<Implementation-Vendor-Id>com.gooddata</Implementation-Vendor-Id>
+						</manifestEntries>
+					</archive>
 				</configuration>
 			</plugin>
 		</plugins>
