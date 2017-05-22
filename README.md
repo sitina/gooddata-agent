@@ -6,7 +6,10 @@ A simple command line tool for uploading data to GoodData's WebDAV storage
 
 *Download:*
 
-from http://gooddata.s3.amazonaws.com/agent/gdc-agent-0.9.1.jar
+from http://gooddata.s3.amazonaws.com/agent/gdc-agent-0.9.2.jar
+
+_Caution:_ It is highly recommended to upgrade to the most recent
+version of the tool.
 
 *Configure:*
 
@@ -14,7 +17,7 @@ Create and edit the properties file (e.g. "my.properties") based on the commente
 
 *Run:*
 
-    java -jar target/gdc-agent-0.9.1.jar my.properties
+    java -jar target/gdc-agent-0.9.2.jar my.properties
 
 Note: the following configuration parameters can be overriden using
 command line parameters:
