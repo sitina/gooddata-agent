@@ -48,8 +48,8 @@ package com.gooddata.agent.api;
 
 import com.gooddata.FutureResult;
 import com.gooddata.GoodData;
-import com.gooddata.GoodDataAgent;
 import com.gooddata.GoodDataException;
+import com.gooddata.GoodDataSettings;
 import com.gooddata.agent.Main;
 import com.gooddata.agent.api.model.Column;
 import com.gooddata.agent.api.model.MetadataObject;
@@ -184,7 +184,9 @@ public class GdcRESTApiWrapper {
         this.config = config;
         client = new HttpClient();
         NetUtil.configureHttpProxy(client);
-        this.gd = new GoodDataAgent(config.getGdcHost(), config.getUsername(), config.getPassword(), config.getPort());
+        GoodDataSettings goodDataSettings = new GoodDataSettings();
+        goodDataSettings.setUserAgent(getUserAgent());
+        this.gd = new GoodData(config.getGdcHost(), config.getUsername(), config.getPassword(), config.getPort(), goodDataSettings);
     }
 
     /**
@@ -2446,6 +2448,7 @@ public class GdcRESTApiWrapper {
                     .await()
                     .until(new Callable<Boolean>() {
                         public Boolean call() throws Exception {
+                            l.debug("Check if execution done");
                             return processExecutionDetailFuture.isDone(); //instead of not optimal polling in gooddata-java use custom polling
                         }
                     });
@@ -3284,9 +3287,7 @@ public class GdcRESTApiWrapper {
     public static String getUserAgent() {
         Package pkg = Main.class.getPackage();
         String clientVersion = pkg != null && pkg.getImplementationVersion() != null?pkg.getImplementationVersion():"UNKNOWN";
-        VersionInfo vi = VersionInfo.loadVersionInfo("org.apache.http.client", HttpClientBuilder.class.getClassLoader());
-        String apacheVersion = vi != null?vi.getRelease():"UNKNOWN";
-        return String.format("%s/%s (%s; %s) %s/%s", new Object[]{"GoodData Agent", clientVersion, System.getProperty("os.name"), System.getProperty("java.specification.version"), "Apache-HttpClient", apacheVersion});
+        return String.format("%s/%s", "GoodData Agent", clientVersion);
     }
 
     protected void finalize() throws Throwable {
