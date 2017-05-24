@@ -6,7 +6,7 @@ A simple command line tool for uploading data to GoodData's WebDAV storage
 
 *Download:*
 
-from http://gooddata.s3.amazonaws.com/agent/gdc-agent-0.10.0.jar
+from http://gooddata.s3.amazonaws.com/agent/gdc-agent-0.10.0.jar (Java 8 required!)
 
 _Caution:_ It is highly recommended to upgrade to the most recent
 version of the tool. Uses Java SDK 1.8.
