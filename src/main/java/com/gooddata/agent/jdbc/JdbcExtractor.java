@@ -27,6 +27,8 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -83,15 +85,11 @@ public class JdbcExtractor {
 		} finally {
 			stmt.close();
 		}
-		
 	}
 
 	private File createTempDir() {
 		try {
-			File tmpdir = File.createTempFile("gdca-jdbc-", "");
-			tmpdir.delete();
-			tmpdir.mkdir();
-			return tmpdir;
+			return Files.createTempDirectory("gdca-jdbc-").toFile();
 		} catch (IOException e) {
 			throw new RuntimeException("Error creating a temp directory", e);
 		}
